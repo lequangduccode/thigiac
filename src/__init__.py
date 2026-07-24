@@ -1,0 +1,2 @@
+"""Meat freshness classification package."""
+
