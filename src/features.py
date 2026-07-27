@@ -38,69 +38,116 @@ def apply_clahe_bgr(image: np.ndarray) -> np.ndarray:
     return cv2.cvtColor(enhanced, cv2.COLOR_LAB2BGR)
 
 
-def normalized_histogram(image: np.ndarray, color_space: int, channels: list[int], bins: list[int]) -> np.ndarray:
-    converted = cv2.cvtColor(image, color_space)
-    hist = cv2.calcHist([converted], channels, None, bins, [0, 256] * len(channels))
-    hist = cv2.normalize(hist, hist).flatten()
-    return hist.astype(np.float32)
+def extract_meat_mask(image: np.ndarray) -> np.ndarray | None:
+    """Tao mask giu lai pixel thit, loai bo nen trang/sang/xam.
 
-
-def color_statistics(image: np.ndarray) -> np.ndarray:
+    Logic:
+    - Loai pixel qua sang (V > 220, S < 30): nen trang / dia
+    - Loai pixel qua toi (V < 20): bong toi
+    - Giu lai pixel co mau sac (S > 20) hoac co V trung binh
+    Fallback toan anh neu meat region < 3%.
+    """
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
-    stats = []
-    for converted in (hsv, lab):
-        for channel in cv2.split(converted):
-            stats.extend(
-                [
-                    float(np.mean(channel)),
-                    float(np.std(channel)),
-                    float(np.percentile(channel, 10)),
-                    float(np.percentile(channel, 50)),
-                    float(np.percentile(channel, 90)),
-                ]
-            )
-    return np.array(stats, dtype=np.float32)
+    s = hsv[:, :, 1].astype(np.int32)
+    v = hsv[:, :, 2].astype(np.int32)
+
+    # Pixel thit: khong qua trang, khong qua toi
+    not_white = ~((s < 30) & (v > 220))
+    not_black = v > 20
+    mask = (not_white & not_black).astype(np.uint8)
+
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
+    min_pixels = int(image.shape[0] * image.shape[1] * 0.03)
+    return mask if int(mask.sum()) >= min_pixels else None
 
 
-def local_binary_pattern(gray: np.ndarray) -> np.ndarray:
-    center = gray[1:-1, 1:-1]
-    codes = np.zeros_like(center, dtype=np.uint8)
-    neighbors = [
-        gray[:-2, :-2],
-        gray[:-2, 1:-1],
-        gray[:-2, 2:],
-        gray[1:-1, 2:],
-        gray[2:, 2:],
-        gray[2:, 1:-1],
-        gray[2:, :-2],
-        gray[1:-1, :-2],
-    ]
-    for bit, neighbor in enumerate(neighbors):
-        codes |= ((neighbor >= center).astype(np.uint8) << bit)
-    hist, _ = np.histogram(codes, bins=32, range=(0, 256), density=True)
+def _channel_hist(pixels: np.ndarray, lo: float, hi: float, n_bins: int) -> np.ndarray:
+    """1D histogram, normalized theo mat do (density=True)."""
+    hist, _ = np.histogram(pixels, bins=n_bins, range=(lo, hi), density=True)
+    # density=True cho ra NaN neu pixels rong -> xu ly an toan
+    hist = np.nan_to_num(hist, nan=0.0)
     return hist.astype(np.float32)
 
 
 def extract_features(image: np.ndarray) -> np.ndarray:
+    """Trich xuat dac trung tu vung thit (loai bo nen).
+
+    Vector feature:
+    - HSV: 1D hist moi kenh (H:32 bins 0-180, S:16 bins, V:16 bins) = 64 dims
+    - Lab: 1D hist moi kenh (L:16, a:16, b:16) = 48 dims
+    - Thong ke HSV + Lab (mean, std, p10, p50, p90 x 6 kenh) = 30 dims
+    - LBP texture = 32 dims
+    Tong: 174 dims
+    """
     image = apply_clahe_bgr(image)
-    hsv_hist = normalized_histogram(image, cv2.COLOR_BGR2HSV, [0, 1, 2], [16, 8, 8])
-    lab_hist = normalized_histogram(image, cv2.COLOR_BGR2LAB, [0, 1, 2], [8, 8, 8])
+    mask = extract_meat_mask(image)
+
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    texture = local_binary_pattern(gray)
-    stats = color_statistics(image)
-    return np.concatenate([hsv_hist, lab_hist, stats, texture])
+
+    feats: list[np.ndarray] = []
+
+    # ---- 1D histograms per channel (meat pixels only) ----
+    # HSV: H range la 0-179 trong OpenCV (khong phai 0-255!)
+    channel_specs = [
+        (hsv,  0,   0, 180, 32),  # Hue       0-179
+        (hsv,  1,   0, 256, 16),  # Saturation 0-255
+        (hsv,  2,   0, 256, 16),  # Value      0-255
+        (lab,  0,   0, 256, 16),  # L          0-255
+        (lab,  1,   0, 256, 16),  # a          0-255
+        (lab,  2,   0, 256, 16),  # b          0-255
+    ]
+    for (img_arr, ch_idx, lo, hi, n_bins) in channel_specs:
+        channel = img_arr[:, :, ch_idx]
+        pixels = channel[mask > 0].astype(np.float32) if mask is not None else channel.flatten().astype(np.float32)
+        if len(pixels) == 0:
+            pixels = channel.flatten().astype(np.float32)
+        feats.append(_channel_hist(pixels, lo, hi, n_bins))
+
+    # ---- Color statistics (mean, std, p10, p50, p90) ----
+    for img_arr in (hsv, lab):
+        for ch_idx in range(3):
+            channel = img_arr[:, :, ch_idx]
+            pixels = channel[mask > 0].astype(np.float32) if mask is not None else channel.flatten().astype(np.float32)
+            if len(pixels) == 0:
+                pixels = channel.flatten().astype(np.float32)
+            feats.append(np.array([
+                float(np.mean(pixels)),
+                float(np.std(pixels)),
+                float(np.percentile(pixels, 10)),
+                float(np.percentile(pixels, 50)),
+                float(np.percentile(pixels, 90)),
+            ], dtype=np.float32))
+
+    # ---- LBP texture ----
+    center = gray[1:-1, 1:-1]
+    codes = np.zeros_like(center, dtype=np.uint8)
+    neighbors = [
+        gray[:-2, :-2], gray[:-2, 1:-1], gray[:-2, 2:],
+        gray[1:-1, 2:],
+        gray[2:, 2:],   gray[2:, 1:-1],  gray[2:, :-2],
+        gray[1:-1, :-2],
+    ]
+    for bit, neighbor in enumerate(neighbors):
+        codes |= ((neighbor >= center).astype(np.uint8) << bit)
+    lbp_hist, _ = np.histogram(codes, bins=32, range=(0, 256), density=True)
+    feats.append(np.nan_to_num(lbp_hist.astype(np.float32), nan=0.0))
+
+    return np.concatenate(feats)
 
 
-def load_feature_matrix(data_dir: str | Path, size: int = 224) -> tuple[np.ndarray, np.ndarray, list[Path]]:
+def load_feature_matrix(
+    data_dir: str | Path, size: int = 224
+) -> tuple[np.ndarray, np.ndarray, list[Path]]:
     samples = list_images(data_dir)
-    features = []
-    labels = []
-    paths = []
+    features, labels, paths = [], [], []
     for path, label in samples:
         image = read_image(path, size=size)
         features.append(extract_features(image))
         labels.append(label)
         paths.append(path)
     return np.vstack(features), np.array(labels), paths
-
