@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nhận biết thịt tươi</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f1420;
+      --card: #1a2130;
+      --border: #2a3446;
+      --text: #e6ebf2;
+      --muted: #8a97ab;
+      --accent: #4f8cff;
+      --good: #2fbf71;
+      --warn: #f4a935;
+      --bad: #ef4d5b;
+    }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: radial-gradient(1200px 600px at 50% -10%, #1b2438, var(--bg));
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 16px;
+    }
+    h1 { font-size: 1.7rem; margin-bottom: 6px; text-align: center; }
+    .sub { color: var(--muted); margin-bottom: 28px; text-align: center; font-size: .95rem; }
+    .container {
+      width: 100%; max-width: 720px;
+      display: grid; grid-template-columns: 1fr; gap: 20px;
+    }
+    @media (min-width: 720px) { .container { grid-template-columns: 1fr 1fr; } }
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 16px; padding: 22px;
+    }
+    .drop {
+      border: 2px dashed var(--border); border-radius: 14px;
+      padding: 30px 18px; text-align: center; cursor: pointer;
+      transition: border-color .2s, background .2s;
+    }
+    .drop:hover, .drop.drag { border-color: var(--accent); background: #1e2740; }
+    .drop svg { width: 42px; height: 42px; opacity: .6; margin-bottom: 10px; }
+    .drop p { color: var(--muted); font-size: .9rem; }
+    .drop b { color: var(--accent); }
+    #preview {
+      margin-top: 16px; width: 100%; border-radius: 12px;
+      display: none; max-height: 300px; object-fit: contain;
+      background: #0b0f18;
+    }
+    button {
+      margin-top: 16px; width: 100%; padding: 12px;
+      background: var(--accent); color: #fff; border: none;
+      border-radius: 10px; font-size: 1rem; font-weight: 600; cursor: pointer;
+      transition: opacity .2s;
+    }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .result-empty { color: var(--muted); text-align: center; padding: 30px 0; font-size: .92rem; }
+    .badge {
+      display: inline-block; padding: 6px 14px; border-radius: 999px;
+      font-weight: 700; font-size: 1.05rem; margin-bottom: 6px;
+    }
+    .badge.good { background: rgba(47,191,113,.15); color: var(--good); }
+    .badge.warn { background: rgba(244,169,53,.15); color: var(--warn); }
+    .badge.bad  { background: rgba(239,77,91,.15);  color: var(--bad); }
+    .conf { color: var(--muted); font-size: .9rem; margin-bottom: 4px; }
+    .desc { color: var(--text); font-size: .92rem; margin: 10px 0 18px; }
+    .bar-row { margin-bottom: 12px; }
+    .bar-label { display: flex; justify-content: space-between; font-size: .85rem; margin-bottom: 5px; color: var(--muted); }
+    .bar-track { background: #0b0f18; border-radius: 8px; height: 10px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 8px; transition: width .5s ease; background: var(--accent); }
+    .bar-fill.good { background: var(--good); }
+    .bar-fill.warn { background: var(--warn); }
+    .bar-fill.bad  { background: var(--bad); }
+    .error { color: var(--bad); font-size: .9rem; text-align: center; padding: 20px 0; }
+    .spinner {
+      width: 22px; height: 22px; border: 3px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin .8s linear infinite; margin: 30px auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .note { color: var(--muted); font-size: .78rem; text-align: center; margin-top: 24px; max-width: 720px; }
+  </style>
+</head>
+<body>
+  <h1>🥩 Nhận biết độ tươi của thịt</h1>
+  <p class="sub">Tải ảnh miếng thịt lên, hệ thống phân tích màu sắc & kết cấu để dự đoán độ tươi.</p>
+
+  <div class="container">
+    <div class="card">
+      <div class="drop" id="drop">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+          <path d="M12 16V4m0 0L8 8m4-4l4 4" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke-linecap="round"/>
+        </svg>
+        <p><b>Chọn ảnh</b> hoặc kéo thả vào đây</p>
+        <p style="margin-top:4px;font-size:.78rem">JPG, PNG, WEBP · tối đa 10MB</p>
+      </div>
+      <input type="file" id="file" accept="image/*" hidden />
+      <img id="preview" alt="preview" />
+      <button id="analyze" disabled>Phân tích</button>
+    </div>
+
+    <div class="card">
+      <div id="result">
+        <div class="result-empty">Kết quả phân tích sẽ hiển thị ở đây.</div>
+      </div>
+    </div>
+  </div>
+
+  <p class="note">Công cụ hỗ trợ sàng lọc bằng ảnh, không thay thế kiểm nghiệm vi sinh hoặc đánh giá an toàn thực phẩm chính thức.</p>
+
+  <script>
+    const drop = document.getElementById('drop');
+    const fileInput = document.getElementById('file');
+    const preview = document.getElementById('preview');
+    const analyzeBtn = document.getElementById('analyze');
+    const resultBox = document.getElementById('result');
+    let selectedFile = null;
+
+    drop.addEventListener('click', () => fileInput.click());
+    ['dragover', 'dragenter'].forEach(ev =>
+      drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('drag'); }));
+    ['dragleave', 'drop'].forEach(ev =>
+      drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); }));
+    drop.addEventListener('drop', e => { if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
+    fileInput.addEventListener('change', e => { if (e.target.files[0]) setFile(e.target.files[0]); });
+
+    function setFile(f) {
+      selectedFile = f;
+      preview.src = URL.createObjectURL(f);
+      preview.style.display = 'block';
+      analyzeBtn.disabled = false;
+      resultBox.innerHTML = '<div class="result-empty">Nhấn "Phân tích" để xem kết quả.</div>';
+    }
+
+    analyzeBtn.addEventListener('click', async () => {
+      if (!selectedFile) return;
+      analyzeBtn.disabled = true;
+      resultBox.innerHTML = '<div class="spinner"></div>';
+      const fd = new FormData();
+      fd.append('image', selectedFile);
+      try {
+        const res = await fetch('/predict', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Lỗi không xác định');
+        renderResult(data);
+      } catch (err) {
+        resultBox.innerHTML = `<div class="error">⚠️ ${err.message}</div>`;
+      } finally {
+        analyzeBtn.disabled = false;
+      }
+    });
+
+    const LEVEL = { good: 'good', warn: 'warn', bad: 'bad' };
+    const VI = { fresh: 'Tươi', half_fresh: 'Bán tươi', spoiled: 'Hỏng' };
+
+    function renderResult(d) {
+      const lvl = LEVEL[d.level] || 'warn';
+      const conf = d.confidence != null ? (d.confidence * 100).toFixed(1) + '%' : '—';
+      let bars = '';
+      const probs = d.probabilities || {};
+      const entries = Object.entries(probs).sort((a, b) => b[1] - a[1]);
+      for (const [name, p] of entries) {
+        const barLvl = name === 'fresh' ? 'good' : name === 'spoiled' ? 'bad' : 'warn';
+        const pct = (p * 100).toFixed(1);
+        bars += `
+          <div class="bar-row">
+            <div class="bar-label"><span>${VI[name] || name}</span><span>${pct}%</span></div>
+            <div class="bar-track"><div class="bar-fill ${barLvl}" style="width:${pct}%"></div></div>
+          </div>`;
+      }
+      resultBox.innerHTML = `
+        <div class="badge ${lvl}">${d.label_vi || d.label}</div>
+        <div class="conf">Độ tin cậy: <b>${conf}</b></div>
+        <div class="desc">${d.description || ''}</div>
+        ${bars}`;
+    }
+  </script>
+</body>
+</html>

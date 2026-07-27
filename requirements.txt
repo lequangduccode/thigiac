@@ -5,4 +5,5 @@ matplotlib
 joblib
 python-docx
 Pillow
+flask
 
