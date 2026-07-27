@@ -57,6 +57,15 @@ def decode_image(file_bytes: bytes, size: int) -> np.ndarray:
     arr = np.frombuffer(file_bytes, dtype=np.uint8)
     image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if image is None:
+        # OpenCV khong doc duoc dinh dang nay (vd AVIF/HEIC dat duoi .jpg) -> thu Pillow.
+        try:
+            from PIL import Image
+
+            pil = Image.open(io.BytesIO(file_bytes)).convert("RGB")
+            image = cv2.cvtColor(np.asarray(pil), cv2.COLOR_RGB2BGR)
+        except Exception:  # noqa: BLE001
+            image = None
+    if image is None:
         raise ValueError("Khong doc duoc anh (dinh dang khong hop le).")
     image = cv2.resize(image, (size, size), interpolation=cv2.INTER_AREA)
     return image
