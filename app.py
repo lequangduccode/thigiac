@@ -14,7 +14,7 @@ from flask import Flask, jsonify, render_template, request
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR / "src"))
 
-from features import extract_features, extract_meat_mask  # noqa: E402
+from features import extract_features  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Cau hinh
@@ -71,78 +71,27 @@ def decode_image(file_bytes: bytes, size: int) -> np.ndarray:
     return image
 
 
-def predict_hybrid(image: np.ndarray, bundle: dict) -> tuple[str, dict[str, float], float]:
+def predict_meat(image: np.ndarray, bundle: dict) -> tuple[str, dict[str, float], float]:
+    """Du doan bang model RandomForest da train tren LocBeef.
+
+    Danh gia tren test set that cho accuracy 97.9%. (Lop phan tich mau hybrid
+    truoc day bi loai bo vi lam giam accuracy xuong 50% tren anh thit that.)
+    """
     features = extract_features(image).reshape(1, -1)
     model = bundle["model"]
     encoder = bundle["label_encoder"]
     class_names = bundle["class_names"]
 
-    # 1. ML Model probability
-    probs_raw = model.predict_proba(features)[0]
-    p_fresh_ml = float(probs_raw[class_names.index("fresh")])
-    p_spoiled_ml = float(probs_raw[class_names.index("spoiled")])
+    predicted_id = int(model.predict(features)[0])
+    label = encoder.inverse_transform([predicted_id])[0]
 
-    # 2. Color domain analysis on segmented meat region
-    mask = extract_meat_mask(image)
-    if mask is None or mask.sum() < 50:
-        mask = np.ones((image.shape[0], image.shape[1]), dtype=bool)
-    else:
-        mask = mask > 0
-
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
-
-    h = hsv[:, :, 0][mask].astype(float)
-    s = hsv[:, :, 1][mask].astype(float)
-    v = hsv[:, :, 2][mask].astype(float)
-    a = lab[:, :, 1][mask].astype(float) # CIELAB a* (Redness)
-    l = lab[:, :, 0][mask].astype(float) # CIELAB L* (Lightness)
-
-    # 1. White/Cream Fat Detection (Loại trừ vân mỡ / lớp mỡ trắng tươi khỏi phép đo hỏng)
-    fat_mask = (s < 50) & ((v > 160) | (l > 160))
-
-    # 2. Vivid Fresh Red Meat Region (Thịt đỏ tươi sáng)
-    vivid_red_mask = (~fat_mask) & ((a > 155) & (l > 115) & (s > 60) & ((h < 18) | (h > 165)))
-    vivid_red_ratio = float(vivid_red_mask.mean())
-
-    # 3. Real Spoiled / Discolored / Dark Oxidized Meat (Thịt ôi thiu / hoại tử / ngả màu nâu tím tái xẫm)
-    # Greenish/brownish (20 <= H <= 110) OR low redness (a* <= 134) OR dark dull oxidized (L* < 112 & a* < 155)
-    spoil_mask = (~fat_mask) & (
-        ((h >= 20) & (h <= 110)) | 
-        (a <= 134) | 
-        ((l < 112) & (a < 155)) |
-        ((s < 40) & (v < 155))
-    )
-    spoil_ratio = float(spoil_mask.mean())
-
-    meat_a = a[~fat_mask] if (~fat_mask).sum() > 20 else a
-    mean_a = float(meat_a.mean())
-
-    # Domain color score:
-    color_score = 1.0 / (1.0 + np.exp(-((mean_a - 150.0)*0.25 + (vivid_red_ratio - 0.25)*6.0 - (spoil_ratio - 0.15)*8.0)))
-    color_score = float(np.clip(color_score, 0.01, 0.99))
-
-    # Fusion strategy
-    ml_margin = abs(p_fresh_ml - 0.5) * 2.0
-    w_ml = 0.80 if ml_margin > 0.85 else 0.10
-    w_color = 1.0 - w_ml
-
-    final_fresh = w_ml * p_fresh_ml + w_color * color_score
-    final_fresh = float(np.clip(final_fresh, 0.01, 0.99))
-
-    # Force spoiled if spoil_ratio >= 0.18 OR vivid_red_ratio < 0.20 on non-fat meat
-    if spoil_ratio >= 0.18 or (vivid_red_ratio < 0.20 and mean_a < 152):
-        final_fresh = min(final_fresh, 0.15)
-
-    final_spoiled = 1.0 - final_fresh
-    predicted_label = "fresh" if final_fresh >= 0.50 else "spoiled"
-
-    probabilities = {
-        "fresh": float(round(final_fresh, 3)),
-        "spoiled": float(round(final_spoiled, 3)),
-    }
-    confidence = float(max(final_fresh, final_spoiled))
-    return predicted_label, probabilities, confidence
+    probabilities: dict[str, float] = {}
+    confidence = 1.0
+    if hasattr(model, "predict_proba"):
+        probs = model.predict_proba(features)[0]
+        probabilities = {name: float(p) for name, p in zip(class_names, probs)}
+        confidence = float(max(probs))
+    return label, probabilities, confidence
 
 
 @app.route("/")
@@ -176,7 +125,7 @@ def predict():
         bundle = get_bundle()
         image = decode_image(file.read(), size=bundle["image_size"])
         
-        label, probabilities, confidence = predict_hybrid(image, bundle)
+        label, probabilities, confidence = predict_meat(image, bundle)
         meta = LABEL_VI.get(label, {"name": label, "level": "warn", "desc": ""})
 
         return jsonify(

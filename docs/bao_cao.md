@@ -2,57 +2,84 @@
 
 ## 1. Bài toán
 
-Bài toán là xây dựng hệ thống nhận biết mức độ tươi của thịt từ ảnh RGB. Đầu vào là ảnh chụp miếng thịt trong điều kiện ánh sáng thông thường; đầu ra là nhãn `fresh`, `half_fresh` hoặc `spoiled`. Nếu chỉ cần bài toán nhị phân, hệ thống có thể gom thành hai lớp `fresh` và `spoiled`.
+Bài toán là xây dựng hệ thống nhận biết mức độ tươi của thịt bò từ ảnh RGB. Đầu vào là ảnh chụp miếng thịt trong điều kiện ánh sáng thông thường; đầu ra là nhãn **`fresh` (tươi)** hoặc **`spoiled` (hỏng/ôi)**. Đây là bài toán **phân loại nhị phân**, khớp với nhãn của bộ dữ liệu thật được sử dụng (LocBeef: `fresh`/`rotten`).
 
-Việc nhận biết thịt tươi quan trọng vì chất lượng thực phẩm ảnh hưởng trực tiếp đến sức khỏe người tiêu dùng, giảm lãng phí thực phẩm và hỗ trợ kiểm tra nhanh trong siêu thị, bếp ăn, kho bảo quản. So với kiểm tra hóa sinh hoặc vi sinh, phương pháp thị giác máy tính có ưu điểm không phá hủy mẫu, chi phí thấp, dễ triển khai bằng camera.
+Việc nhận biết thịt tươi quan trọng vì chất lượng thực phẩm ảnh hưởng trực tiếp đến sức khỏe người tiêu dùng, giúp giảm lãng phí thực phẩm và hỗ trợ kiểm tra nhanh tại siêu thị, bếp ăn, kho bảo quản. So với kiểm tra hóa sinh hoặc vi sinh, phương pháp thị giác máy tính có ưu điểm không phá hủy mẫu, chi phí thấp, dễ triển khai bằng camera.
 
-## 2. Phương pháp
+## 2. Dữ liệu
 
-Hướng tiếp cận chính trong project là học máy với đặc trưng ảnh thủ công. Ảnh được resize về 224 x 224, cân bằng sáng bằng CLAHE trên kênh L của không gian màu Lab, sau đó trích xuất đặc trưng màu sắc và texture.
+Sử dụng bộ **LocBeef — Beef Quality Image Dataset** (Kaggle, tác giả `mexwell`): **3.268 ảnh** thịt bò địa phương vùng Aceh, chia sẵn hai lớp `fresh` và `rotten`, đã có sẵn phân chia train/test:
 
-Đặc trưng màu gồm histogram HSV, histogram Lab và các thống kê trung bình, độ lệch chuẩn, phần trăm vị 10/50/90 trên từng kênh. Đây là nhóm đặc trưng phù hợp vì thịt tươi thường có màu đỏ/hồng sáng hơn, trong khi thịt kém tươi có xu hướng xỉn màu, nâu, xanh xám hoặc bề mặt tối hơn.
+| Tập | fresh | rotten | Tổng |
+|:--|--:|--:|--:|
+| Train | 1.144 | 1.144 | 2.288 |
+| Test | 490 | 490 | 980 |
+| **Tổng** | **1.634** | **1.634** | **3.268** |
 
-Đặc trưng texture dùng Local Binary Pattern (LBP) để mô tả độ thô, mịn, vân cơ, đốm bề mặt. Khi thịt giảm độ tươi, bề mặt thường thay đổi do mất nước, oxy hóa và vi sinh vật, vì vậy texture hỗ trợ phân biệt khi màu sắc bị ảnh hưởng bởi ánh sáng.
+Nhãn `rotten` của dataset được ánh xạ sang `spoiled` để thống nhất với giao diện ứng dụng. Vì kho ảnh gốc lớn (~5,5 GB), quá trình huấn luyện đọc ảnh **trực tiếp từ file nén (in-memory)** mà không giải nén ra ổ đĩa (`scripts/train_locbeef_from_zip.py`).
 
-Sau khi có vector đặc trưng, project huấn luyện SVM kernel RBF hoặc RandomForest. Dữ liệu được chia train/test theo tỉ lệ 80/20 có stratify. Các chỉ số đánh giá gồm accuracy, precision, recall, F1-score và confusion matrix.
+## 3. Phương pháp
 
-Với hướng học sâu, có thể dùng transfer learning từ MobileNetV3, EfficientNet-B0, ResNet-50 hoặc Swin Transformer. Các nghiên cứu gần đây cho thấy mô hình học sâu trích xuất đặc trưng từ ảnh RGB có thể đạt kết quả cao trong phân loại độ tươi thịt; tuy nhiên với bài tập nhỏ, baseline SVM dễ chạy, dễ giải thích và không cần GPU.
+Hướng tiếp cận là **học máy cổ điển với đặc trưng ảnh thủ công** — nhẹ, chạy được trên CPU và dễ giải thích.
 
-## 3. Thử nghiệm
+### 3.1 Tiền xử lý và tách vùng thịt
 
-Dataset khuyến nghị là các bộ ảnh thịt tươi/thịt hỏng trên Kaggle như Meat Quality Assessment Dataset hoặc Meat Freshness Image Dataset. Cấu trúc thư mục dùng trong code:
+1. Đọc ảnh, resize về **224 × 224** để chuẩn hóa đầu vào.
+2. Cân bằng sáng cục bộ bằng **CLAHE** trên kênh L của không gian màu Lab, giảm ảnh hưởng chiếu sáng không đều.
+3. **Tách vùng thịt (meat-region masking):** loại bỏ pixel nền quá sáng/trắng (khay, đĩa) và pixel quá tối, dùng phép hình thái học open/close để làm sạch mask. Đặc trưng màu chỉ tính trên vùng thịt, tránh học nhầm màu nền.
 
-```text
-data/meat_dataset/
-  fresh/
-  half_fresh/
-  spoiled/
-```
+### 3.2 Đặc trưng (vector 174 chiều)
 
-Quy trình thử nghiệm:
+| Nhóm đặc trưng | Chi tiết | Số chiều |
+|:--|:--|--:|
+| Histogram HSV | H (32 bins, 0–179), S (16), V (16) | 64 |
+| Histogram Lab | L (16), a (16), b (16) | 48 |
+| Thống kê màu | mean, std, phần trăm vị 10/50/90 trên 6 kênh HSV+Lab | 30 |
+| Texture LBP | Local Binary Pattern, 32 bins | 32 |
+| **Tổng** | | **174** |
 
-1. Thu thập hoặc tải ảnh, loại ảnh mờ/nhiễu nặng, đưa về cấu trúc thư mục theo nhãn.
-2. Chạy `python src/train.py --data data/meat_dataset --model svm --output-dir outputs/meat_svm`.
-3. Ghi lại accuracy, precision, recall, F1-score trong `metrics.json`.
-4. Quan sát `confusion_matrix.png` để biết lớp nào hay bị nhầm.
-5. Dự đoán ảnh mới bằng `python src/predict.py --model outputs/meat_svm/model.joblib --image path/to/image.jpg`.
+Đặc trưng màu (HSV/Lab) phù hợp vì thịt tươi có màu đỏ/hồng rõ, thịt hỏng ngả nâu/xám/xỉn; LBP mô tả vân và độ thô mịn bề mặt vốn thay đổi khi thịt mất nước và oxy hóa.
 
-Trong repo có thêm dataset minh họa sinh tự động để kiểm thử pipeline khi chưa có dataset thật. Dataset này không dùng làm kết luận khoa học, chỉ chứng minh code đọc ảnh, trích xuất đặc trưng, huấn luyện, lưu mô hình và dự đoán hoạt động đúng.
+### 3.3 Mô hình
 
-## 4. Thảo luận và nhận xét
+Mô hình chính là **RandomForest** (300 cây, `class_weight="balanced"`). Mã nguồn cũng hỗ trợ SVM kernel RBF như một lựa chọn thay thế (`src/train.py --model svm`). Đánh giá bằng accuracy, precision, recall, F1-score và confusion matrix.
 
-Ưu điểm của phương pháp là đơn giản, dễ triển khai, chạy nhanh trên CPU và giải thích được dựa trên màu sắc/texture. Đây là lựa chọn phù hợp cho bài tập môn học hoặc prototype kiểm tra nhanh.
+## 4. Kết quả
 
-Hạn chế chính là độ chính xác phụ thuộc nhiều vào ánh sáng, nền ảnh, góc chụp, loại thịt và cách gán nhãn. Nếu ảnh có bao bì bóng, phản chiếu hoặc nền phức tạp, mô hình có thể học nhầm đặc trưng nền thay vì đặc trưng thịt.
+Đánh giá trên **test set gốc của LocBeef (980 ảnh)**:
 
-Hướng cải thiện gồm: tách vùng thịt bằng segmentation trước khi phân loại, tăng dữ liệu với xoay/crop/thay đổi sáng, dùng transfer learning với MobileNet/EfficientNet, thêm cơ chế từ chối dự đoán khi ảnh ngoài phân phối hoặc độ tin cậy thấp.
+| Chỉ số | fresh | spoiled |
+|:--|--:|--:|
+| Precision | 1.00 | 0.96 |
+| Recall | 0.96 | 1.00 |
+| F1-score | 0.98 | 0.98 |
 
-Kết luận: Nhận biết thịt tươi bằng ảnh là bài toán có ý nghĩa thực tế và có thể giải bằng pipeline thị giác máy tính tương đối gọn. Baseline màu + texture + SVM là nền tảng tốt; nếu có dataset lớn và đa dạng, học sâu kết hợp segmentation sẽ cho khả năng tổng quát tốt hơn.
+- **Accuracy: 97.9%** (959/980 ảnh đúng, 21 lỗi).
+- Ma trận nhầm lẫn: 20 ảnh `fresh` bị đoán nhầm thành `spoiled`; không có ảnh `spoiled` nào bị đoán nhầm thành `fresh`. Mô hình nghiêng về phía "an toàn" (thiên về báo hỏng), phù hợp bài toán an toàn thực phẩm.
+
+Xem `outputs/locbeef_rf_v1/confusion_matrix.png` và `classification_report.txt`.
+
+## 5. Ứng dụng web demo
+
+Repo kèm ứng dụng **Flask** (`app.py`): người dùng tải ảnh lên trình duyệt, hệ thống trả về nhãn tươi/hỏng kèm xác suất từng lớp. Ứng dụng có fallback giải mã ảnh **AVIF/HEIC** bằng Pillow (định dạng ảnh điện thoại/web mà OpenCV không đọc được). Chạy: `python app.py` rồi mở `http://127.0.0.1:5000`.
+
+## 6. Thảo luận và nhận xét
+
+**Ưu điểm:** pipeline đơn giản, chạy nhanh trên CPU, không cần GPU, giải thích được dựa trên màu sắc/texture; đạt độ chính xác cao trên đúng phân phối dữ liệu huấn luyện.
+
+**Hạn chế và các điểm cần trung thực:**
+
+- **Cách chia train/test:** dùng phân chia có sẵn của dataset. Nếu nhiều ảnh chụp *cùng một miếng thịt* nằm ở cả train lẫn test, độ chính xác 97,9% có thể *lạc quan hơn* so với thực tế trên mẫu hoàn toàn mới. Đây là giới hạn cần lưu ý khi diễn giải con số.
+- **Lệch phân phối (domain shift):** mô hình được huấn luyện trên ảnh bò Aceh chụp trong điều kiện tương đối đồng nhất. Khi thử với ảnh thịt lấy ngẫu nhiên trên web (khác camera, ánh sáng, loại thịt), độ tin cậy giảm rõ và có trường hợp phân loại sai. Mô hình mạnh trên ảnh *giống dữ liệu huấn luyện*, không nên xem là bộ phân loại tổng quát cho mọi loại thịt.
+- **Ghi nhận trong quá trình phát triển:** một lớp "hybrid" phân tích màu miền (CIELAB/HSV) từng được thêm vào để hậu xử lý dự đoán. Tuy nhiên khi **đánh giá định lượng trên test set thật**, lớp này làm accuracy tụt xuống **50%** (các ngưỡng màu được chỉnh tay theo ảnh stock sáng đẹp, không khớp màu bò thật nên ép hầu hết ảnh về "hỏng"). Vì vậy lớp hybrid đã bị **loại bỏ**, hệ thống dùng trực tiếp dự đoán của RandomForest. Đây là ví dụ cho thấy tầm quan trọng của việc đánh giá trên dữ liệu thật thay vì tin vào heuristic cảm tính.
+
+**Hướng cải thiện:** kiểm soát rò rỉ dữ liệu bằng cách chia theo *từng mẫu vật*; tăng đa dạng dữ liệu (nhiều loại thịt, điều kiện chụp); dùng transfer learning (MobileNetV3/EfficientNet-B0) để tổng quát tốt hơn; thêm cơ chế từ chối dự đoán khi ảnh nằm ngoài phân phối hoặc độ tin cậy thấp.
+
+**Kết luận:** nhận biết thịt tươi bằng ảnh là bài toán có ý nghĩa thực tế và giải được bằng pipeline thị giác máy tính gọn nhẹ. Baseline màu + texture + tách vùng thịt + RandomForest đạt 97,9% trên bộ LocBeef. Hệ thống là công cụ **hỗ trợ sàng lọc**, không thay thế kiểm nghiệm vi sinh hoặc đánh giá an toàn thực phẩm chính thức.
 
 ## Tài liệu tham khảo
 
-1. Bramantyo, H. A., Faridi, M. A., Chen, R., Harris, C., & Sun, Y. (2026). Deep Learning-Based Meat Freshness Detection with Segmentation and OOD-Aware Classification. arXiv:2603.00368.
-2. Hidalgo, M. M., Lima, R. C., De Nadai Fernandes, E. A., Bacchi, M. A., & Sarriés, G. A. (2025). Leveraging pre-trained computer vision models for accurate classification of meat freshness. Food Chemistry, 495(Pt 3), 146430.
-3. Kaggle. Meat Quality Assessment Dataset.
-4. Kaggle. Meat Freshness Image Dataset.
-
+1. LocBeef — Beef Quality Image Dataset (local Aceh beef, fresh/rotten). Kaggle. https://www.kaggle.com/datasets/mexwell/locbeef-beef-quality-image-dataset
+2. Bramantyo, H. A., Faridi, M. A., Chen, R., Harris, C., & Sun, Y. (2026). Deep Learning-Based Meat Freshness Detection with Segmentation and OOD-Aware Classification. arXiv:2603.00368.
+3. Hidalgo, M. M., Lima, R. C., De Nadai Fernandes, E. A., Bacchi, M. A., & Sarriés, G. A. (2025). Leveraging pre-trained computer vision models for accurate classification of meat freshness. Food Chemistry, 495(Pt 3), 146430.
+4. Ojala, T., Pietikäinen, M., & Mäenpää, T. (2002). Multiresolution gray-scale and rotation invariant texture classification with local binary patterns. IEEE TPAMI, 24(7), 971–987.

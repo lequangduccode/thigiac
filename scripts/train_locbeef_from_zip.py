@@ -59,6 +59,12 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--zip", required=True)
     ap.add_argument("--output-dir", default="outputs/locbeef_rf_v1")
+    ap.add_argument(
+        "--all",
+        action="store_true",
+        help="Train model cuoi cung tren TOAN BO anh (train+test), khong giu held-out. "
+        "Dung cho model ship di sau khi da do accuracy bang train/test split.",
+    )
     args = ap.parse_args()
 
     zpath = Path(args.zip)
@@ -81,10 +87,11 @@ def main() -> None:
             skipped += 1
             continue
         feat = extract_features(img)
-        if split_of(name) == "test":
+        if not args.all and split_of(name) == "test":
             x_test.append(feat)
             y_test.append(lab)
         else:
+            # Che do --all: gop het vao train (khong giu held-out).
             x_train.append(feat)
             y_train.append(lab)
         if i % 250 == 0:
@@ -94,21 +101,25 @@ def main() -> None:
     print(f"train={len(x_train)} test={len(x_test)} skipped={skipped}", flush=True)
 
     x_train = np.vstack(x_train)
-    x_test = np.vstack(x_test)
     encoder = LabelEncoder().fit(y_train + y_test)
     yt = encoder.transform(y_train)
-    ye = encoder.transform(y_test)
     class_names = list(encoder.classes_)
 
     model = Pipeline([("classifier", RandomForestClassifier(
         n_estimators=300, random_state=42, class_weight="balanced", n_jobs=-1))])
     print("Training RandomForest...", flush=True)
     model.fit(x_train, yt)
-    y_pred = model.predict(x_test)
 
-    acc = accuracy_score(ye, y_pred)
-    report_text = classification_report(ye, y_pred, target_names=class_names, zero_division=0)
-    report_dict = classification_report(ye, y_pred, target_names=class_names, output_dict=True, zero_division=0)
+    # Chi danh gia khi con held-out test (khong o che do --all).
+    acc = None
+    report_dict = None
+    if x_test:
+        xt = np.vstack(x_test)
+        ye = encoder.transform(y_test)
+        y_pred = model.predict(xt)
+        acc = accuracy_score(ye, y_pred)
+        report_text = classification_report(ye, y_pred, target_names=class_names, zero_division=0)
+        report_dict = classification_report(ye, y_pred, target_names=class_names, output_dict=True, zero_division=0)
 
     bundle = {
         "model": model,
@@ -120,18 +131,26 @@ def main() -> None:
     (out_dir / "metrics.json").write_text(json.dumps({
         "dataset": "locbeef (Kaggle mexwell)",
         "model": "random_forest",
+        "trained_on": "all_3268" if args.all else "train_split",
         "num_train": len(yt),
-        "num_test": len(ye),
+        "num_test": len(y_test),
         "skipped": skipped,
         "classes": class_names,
         "accuracy": acc,
+        "note": ("Model ship di huan luyen tren toan bo 3268 anh. Accuracy 0.9786 do "
+                 "rieng bang train/test split cua LocBeef (2288 train / 980 test)."
+                 if args.all else None),
         "classification_report": report_dict,
     }, indent=2, ensure_ascii=False), encoding="utf-8")
 
     print(f"\nSaved: {out_dir / 'model.joblib'}")
     print(f"Classes: {class_names}")
-    print(f"Accuracy (test): {acc:.4f}")
-    print(report_text)
+    if acc is not None:
+        print(f"Accuracy (test): {acc:.4f}")
+        print(report_text)
+    else:
+        print(f"Trained on ALL {len(yt)} images (no held-out). "
+              "Reported accuracy 0.9786 comes from the separate train/test split eval.")
 
 
 if __name__ == "__main__":

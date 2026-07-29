@@ -13,7 +13,7 @@ from docx.shared import Inches, Pt, RGBColor
 
 ROOT = Path(__file__).resolve().parents[1]
 REPORT_PATH = ROOT / "reports" / "bao_cao_nhan_biet_thit_tuoi.docx"
-CONFUSION_MATRIX = ROOT / "outputs" / "demo_v2" / "confusion_matrix.png"
+CONFUSION_MATRIX = ROOT / "outputs" / "locbeef_rf_v1" / "confusion_matrix.png"
 
 
 def set_font(run, name: str = "Calibri", size: int | None = None, bold: bool | None = None) -> None:
@@ -140,115 +140,147 @@ def build() -> None:
 
     add_paragraph(
         doc,
-        "Đề tài được chọn từ nhóm nhận dạng thực phẩm tươi trong ảnh đề bài. Báo cáo trình bày bài toán, phương pháp học máy/học sâu, thử nghiệm, kết quả và nhận xét; độ dài thiết kế dưới 20 trang.",
+        "Báo cáo trình bày bài toán nhận biết độ tươi của thịt bò từ ảnh, phương pháp học máy với đặc trưng màu + texture và tách vùng thịt, kết quả thực nghiệm trên bộ dữ liệu thật LocBeef, ứng dụng web demo, cùng các nhận xét và hạn chế.",
     )
 
     add_heading(doc, "1. Bài toán", 1)
     add_paragraph(
         doc,
-        "Bài toán là phân loại ảnh thịt theo mức độ tươi. Đầu vào là ảnh RGB chụp miếng thịt trong điều kiện ánh sáng thông thường; đầu ra là nhãn fresh, half_fresh hoặc spoiled. Với bài toán đơn giản hơn, có thể gom thành hai lớp fresh và spoiled.",
+        "Bài toán là phân loại nhị phân ảnh thịt bò theo độ tươi. Đầu vào là ảnh RGB chụp miếng thịt trong ánh sáng thông thường; đầu ra là nhãn fresh (tươi) hoặc spoiled (hỏng/ôi). Nhãn này khớp với bộ dữ liệu thật LocBeef (fresh/rotten).",
     )
     add_paragraph(
         doc,
         "Ý nghĩa: nhận biết nhanh chất lượng thịt giúp hỗ trợ kiểm soát an toàn thực phẩm, giảm rủi ro cho người tiêu dùng, giảm lãng phí và hỗ trợ các điểm bán lẻ hoặc kho bảo quản kiểm tra sơ bộ bằng camera.",
         bold_prefix="Ý nghĩa:",
     )
-    add_bullet(doc, "Tính chất thị giác quan trọng: màu đỏ/hồng của thịt tươi, màu xỉn/nâu/xám của thịt kém tươi, độ bóng bề mặt, vân cơ và các đốm lạ.")
-    add_bullet(doc, "Khó khăn: ánh sáng thay đổi, nền ảnh phức tạp, phản chiếu từ bao bì, khác biệt giữa các loại thịt và nhãn dữ liệu có thể không đồng nhất.")
+    add_bullet(doc, "Tính chất thị giác quan trọng: màu đỏ/hồng của thịt tươi, màu xỉn/nâu/xám của thịt kém tươi, độ bóng bề mặt và vân cơ.")
+    add_bullet(doc, "Khó khăn: ánh sáng thay đổi, nền ảnh phức tạp, khác biệt giữa các loại thịt và điều kiện chụp.")
 
-    add_heading(doc, "2. Phương pháp", 1)
-    add_heading(doc, "2.1 Pipeline xử lý", 2)
+    add_heading(doc, "2. Dữ liệu", 1)
+    add_paragraph(
+        doc,
+        "Sử dụng bộ LocBeef - Beef Quality Image Dataset (Kaggle, tác giả mexwell): 3.268 ảnh thịt bò địa phương vùng Aceh, hai lớp fresh và rotten, đã chia sẵn train/test. Nhãn rotten được ánh xạ sang spoiled để thống nhất với ứng dụng.",
+    )
+    add_table(
+        doc,
+        ["Tập", "fresh", "rotten", "Tổng"],
+        [
+            ["Train", "1.144", "1.144", "2.288"],
+            ["Test", "490", "490", "980"],
+            ["Tổng", "1.634", "1.634", "3.268"],
+        ],
+        [2400, 2320, 2320, 2320],
+    )
+    add_paragraph(
+        doc,
+        "Vì kho ảnh gốc lớn (khoảng 5,5 GB), quá trình huấn luyện đọc ảnh trực tiếp từ file nén trong bộ nhớ, không giải nén ra ổ đĩa (scripts/train_locbeef_from_zip.py).",
+    )
+
+    add_heading(doc, "3. Phương pháp", 1)
+    add_heading(doc, "3.1 Tiền xử lý và tách vùng thịt", 2)
     for step in [
-        "Đọc ảnh, resize về 224 x 224 để đầu vào thống nhất.",
+        "Đọc ảnh, resize về 224 x 224 để chuẩn hóa đầu vào.",
         "Cân bằng sáng cục bộ bằng CLAHE trên kênh L của không gian màu Lab.",
-        "Trích xuất đặc trưng màu HSV, Lab, thống kê kênh màu và texture LBP.",
-        "Chuẩn hóa vector đặc trưng, huấn luyện SVM kernel RBF hoặc RandomForest.",
-        "Đánh giá bằng accuracy, precision, recall, F1-score và confusion matrix.",
+        "Tách vùng thịt (meat-region masking): loại pixel nền quá sáng/trắng và quá tối, làm sạch bằng phép hình thái học; đặc trưng màu chỉ tính trên vùng thịt.",
     ]:
         add_number(doc, step)
 
-    add_heading(doc, "2.2 Đặc trưng sử dụng", 2)
+    add_heading(doc, "3.2 Đặc trưng (vector 174 chiều)", 2)
     add_table(
         doc,
-        ["Nhóm đặc trưng", "Mục đích", "Lý do phù hợp"],
+        ["Nhóm đặc trưng", "Chi tiết", "Số chiều"],
         [
-            ["HSV histogram", "Mô tả phân bố sắc độ, độ bão hòa và độ sáng", "Thịt tươi thường có màu hồng/đỏ rõ hơn, thịt hỏng thường xỉn màu."],
-            ["Lab histogram", "Tách sáng và thành phần màu", "Giúp giảm ảnh hưởng của thay đổi chiếu sáng so với RGB thuần."],
-            ["Thống kê màu", "Mean, std, percentile trên HSV/Lab", "Tạo đặc trưng gọn, dễ học với SVM/RandomForest."],
-            ["LBP texture", "Mô tả vân, độ thô mịn và đốm bề mặt", "Hữu ích khi bề mặt thịt thay đổi trong quá trình giảm độ tươi."],
+            ["Histogram HSV", "H (32 bins, 0-179), S (16), V (16)", "64"],
+            ["Histogram Lab", "L (16), a (16), b (16)", "48"],
+            ["Thống kê màu", "mean, std, p10/p50/p90 trên 6 kênh HSV+Lab", "30"],
+            ["Texture LBP", "Local Binary Pattern, 32 bins", "32"],
+            ["Tổng", "", "174"],
         ],
-        [1800, 3300, 4260],
+        [3000, 5060, 1300],
+    )
+    add_paragraph(
+        doc,
+        "Đặc trưng màu HSV/Lab phù hợp vì thịt tươi có màu đỏ/hồng rõ, thịt hỏng ngả nâu/xám; LBP mô tả vân và độ thô mịn bề mặt vốn thay đổi khi thịt mất nước và oxy hóa.",
     )
 
-    add_heading(doc, "2.3 Mô hình học sâu liên quan", 2)
+    add_heading(doc, "3.3 Mô hình", 2)
     add_paragraph(
         doc,
-        "Các nghiên cứu gần đây dùng transfer learning từ ResNet, EfficientNet, MobileNet hoặc Transformer để phân loại độ tươi thịt. Hướng học sâu có thể tự học đặc trưng phức tạp hơn, nhưng cần dataset lớn và nên có GPU. Với bài tập này, baseline màu + texture + SVM được chọn vì nhẹ, dễ chạy và dễ giải thích.",
-    )
-    add_paragraph(
-        doc,
-        "Một hướng nâng cấp quan trọng là segmentation: tách vùng thịt trước khi phân loại để giảm nhiễu nền, đặc biệt khi ảnh có khay, bao bì hoặc phản chiếu.",
+        "Mô hình chính là RandomForest (300 cây, class_weight=balanced); mã nguồn cũng hỗ trợ SVM kernel RBF như lựa chọn thay thế. Đây là baseline nhẹ, chạy trên CPU, dễ giải thích. Hướng học sâu (transfer learning MobileNet/EfficientNet) có thể tổng quát tốt hơn nhưng cần dữ liệu lớn và GPU.",
     )
 
-    add_heading(doc, "3. Thử nghiệm", 1)
-    add_heading(doc, "3.1 Dữ liệu", 2)
+    add_heading(doc, "4. Kết quả", 1)
     add_paragraph(
         doc,
-        "Dataset thật khuyến nghị: Kaggle Meat Quality Assessment Dataset hoặc Meat Freshness Image Dataset. Cấu trúc thư mục trong repo yêu cầu mỗi lớp là một thư mục con, ví dụ data/meat_dataset/fresh, data/meat_dataset/half_fresh, data/meat_dataset/spoiled.",
+        "Đánh giá trên test set gốc của LocBeef gồm 980 ảnh chưa dùng khi huấn luyện:",
     )
-    add_paragraph(
-        doc,
-        "Do chưa có ảnh thịt thật trong workspace, repo có script sinh dataset minh họa để kiểm thử pipeline kỹ thuật. Kết quả minh họa không được xem là kết luận khoa học về thịt thật.",
-    )
-    add_heading(doc, "3.2 Kết quả kiểm thử pipeline", 2)
     add_table(
         doc,
-        ["Mục", "Giá trị"],
+        ["Chỉ số", "fresh", "spoiled"],
         [
-            ["Dataset demo", "135 ảnh sinh tự động, 3 lớp fresh/half_fresh/spoiled"],
-            ["Chia dữ liệu", "80% train, 20% test, stratify theo nhãn"],
-            ["Mô hình", "SVM kernel RBF, class_weight=balanced"],
-            ["Accuracy demo", "92.59%"],
-            ["Dự đoán mẫu", "fresh_000.png -> fresh, xác suất fresh 0.995"],
+            ["Precision", "1.00", "0.96"],
+            ["Recall", "0.96", "1.00"],
+            ["F1-score", "0.98", "0.98"],
         ],
-        [2300, 7060],
+        [3200, 3080, 3080],
+    )
+    add_paragraph(
+        doc,
+        "Accuracy: 97,9% (959/980 ảnh đúng, 21 lỗi). 20 ảnh fresh bị đoán nhầm thành spoiled, không có ảnh spoiled nào bị đoán nhầm thành fresh - mô hình nghiêng về phía an toàn (thiên báo hỏng), phù hợp bài toán an toàn thực phẩm.",
+        bold_prefix="Accuracy:",
     )
     if CONFUSION_MATRIX.exists():
         paragraph = doc.add_paragraph()
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = paragraph.add_run()
-        run.add_picture(str(CONFUSION_MATRIX), width=Inches(4.8))
+        run.add_picture(str(CONFUSION_MATRIX), width=Inches(4.4))
         caption = doc.add_paragraph()
         caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        caption_run = caption.add_run("Hình 1. Confusion matrix trên dataset minh họa.")
+        caption_run = caption.add_run("Hình 1. Confusion matrix trên test set LocBeef (980 ảnh).")
         set_font(caption_run, size=10)
         caption_run.italic = True
 
-    add_heading(doc, "4. Thảo luận và nhận xét", 1)
+    add_heading(doc, "5. Ứng dụng web demo", 1)
     add_paragraph(
         doc,
-        "Ưu điểm của phương pháp là đơn giản, chạy nhanh trên CPU, dễ triển khai và giải thích được bằng các dấu hiệu màu sắc/texture. Đây là baseline phù hợp để so sánh trước khi chuyển sang mô hình học sâu.",
+        "Repo kèm ứng dụng Flask (app.py): người dùng tải ảnh lên trình duyệt, hệ thống trả về nhãn tươi/hỏng kèm xác suất từng lớp. Ứng dụng có fallback giải mã ảnh AVIF/HEIC bằng Pillow (định dạng ảnh điện thoại/web mà OpenCV không đọc được). Chạy python app.py rồi mở http://127.0.0.1:5000.",
+    )
+
+    add_heading(doc, "6. Thảo luận và nhận xét", 1)
+    add_paragraph(
+        doc,
+        "Ưu điểm: pipeline đơn giản, chạy nhanh trên CPU, không cần GPU, giải thích được dựa trên màu sắc/texture; đạt độ chính xác cao trên đúng phân phối dữ liệu huấn luyện.",
+        bold_prefix="Ưu điểm:",
+    )
+    add_paragraph(doc, "Hạn chế và các điểm cần trung thực:", bold_prefix="Hạn chế và các điểm cần trung thực:")
+    add_bullet(
+        doc,
+        "Cách chia train/test dùng phân chia có sẵn của dataset. Nếu nhiều ảnh chụp cùng một miếng thịt nằm ở cả train lẫn test, con số 97,9% có thể lạc quan hơn so với thực tế trên mẫu hoàn toàn mới.",
+    )
+    add_bullet(
+        doc,
+        "Lệch phân phối (domain shift): mô hình huấn luyện trên ảnh bò Aceh chụp khá đồng nhất. Khi thử với ảnh thịt lấy ngẫu nhiên trên web (khác camera, ánh sáng, loại thịt), độ tin cậy giảm và có trường hợp sai. Mô hình mạnh trên ảnh giống dữ liệu huấn luyện, không nên xem là bộ phân loại tổng quát.",
+    )
+    add_bullet(
+        doc,
+        "Ghi nhận khi phát triển: một lớp hybrid phân tích màu miền từng được thêm vào để hậu xử lý, nhưng khi đánh giá định lượng trên test set thật, lớp này kéo accuracy xuống 50% (ngưỡng màu chỉnh tay không khớp màu bò thật, ép hầu hết ảnh về hỏng). Vì vậy lớp hybrid đã bị loại bỏ và hệ thống dùng trực tiếp dự đoán RandomForest.",
     )
     add_paragraph(
         doc,
-        "Hạn chế là mô hình nhạy với ánh sáng, góc chụp, nền ảnh và loại thịt. Nếu dataset nhỏ hoặc ít đa dạng, mô hình có thể học nhầm màu nền/bao bì thay vì đặc trưng của thịt.",
+        "Hướng cải thiện: chia dữ liệu theo từng mẫu vật để tránh rò rỉ; tăng đa dạng dữ liệu; dùng transfer learning; thêm cơ chế từ chối dự đoán khi ảnh ngoài phân phối hoặc độ tin cậy thấp.",
     )
     add_paragraph(
         doc,
-        "Hướng cải thiện gồm: tăng dữ liệu, chuẩn hóa điều kiện chụp, dùng segmentation để tách vùng thịt, áp dụng transfer learning với MobileNetV3/EfficientNet-B0 và thêm cơ chế từ chối dự đoán khi ảnh có độ tin cậy thấp.",
-    )
-    add_paragraph(
-        doc,
-        "Kết luận: nhận biết thịt tươi bằng ảnh là bài toán có ý nghĩa thực tế. Pipeline màu + texture + SVM là nền tảng tốt cho bài tập; với dataset thật lớn hơn, học sâu kết hợp segmentation sẽ có khả năng tổng quát tốt hơn.",
+        "Kết luận: baseline màu + texture + tách vùng thịt + RandomForest đạt 97,9% trên bộ LocBeef. Hệ thống là công cụ hỗ trợ sàng lọc, không thay thế kiểm nghiệm vi sinh hoặc đánh giá an toàn thực phẩm chính thức.",
     )
 
     doc.add_section(WD_SECTION.NEW_PAGE)
     add_heading(doc, "Tài liệu tham khảo", 1)
     refs = [
+        "LocBeef - Beef Quality Image Dataset (local Aceh beef, fresh/rotten). Kaggle. https://www.kaggle.com/datasets/mexwell/locbeef-beef-quality-image-dataset",
         "Bramantyo, H. A., Faridi, M. A., Chen, R., Harris, C., & Sun, Y. (2026). Deep Learning-Based Meat Freshness Detection with Segmentation and OOD-Aware Classification. arXiv:2603.00368.",
         "Hidalgo, M. M., Lima, R. C., De Nadai Fernandes, E. A., Bacchi, M. A., & Sarriés, G. A. (2025). Leveraging pre-trained computer vision models for accurate classification of meat freshness. Food Chemistry, 495(Pt 3), 146430.",
-        "Kaggle. Meat Quality Assessment Dataset. https://www.kaggle.com/datasets/crowww/meat-quality-assessment-based-on-deep-learning",
-        "Kaggle. Meat Freshness Image Dataset. https://www.kaggle.com/datasets/vinayakshanawad/meat-freshness-image-dataset",
+        "Ojala, T., Pietikäinen, M., & Mäenpää, T. (2002). Multiresolution gray-scale and rotation invariant texture classification with local binary patterns. IEEE TPAMI, 24(7), 971-987.",
     ]
     for ref in refs:
         add_number(doc, ref)

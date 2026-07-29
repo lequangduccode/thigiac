@@ -1,0 +1,12 @@
+LocBeef test set (n=980)
+RandomForest accuracy: 0.9786
+
+              precision    recall  f1-score   support
+
+       fresh       1.00      0.96      0.98       490
+     spoiled       0.96      1.00      0.98       490
+
+    accuracy                           0.98       980
+   macro avg       0.98      0.98      0.98       980
+weighted avg       0.98      0.98      0.98       980
+
