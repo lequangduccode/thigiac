@@ -617,15 +617,54 @@ def build() -> None:
         "Kết quả hiển thị: nhãn (Tươi/Hỏng) với màu tương ứng, độ tin cậy và thanh xác suất từng lớp.",
     ]:
         add_number(doc, step)
-    add_heading(doc, "7.3 Kết quả demo", 2)
+
+    add_heading(doc, "7.3 Minh họa giao diện web", 2)
     add_paragraph(
         doc,
-        "Hình 6 minh họa dự đoán của mô hình trên sáu ảnh test LocBeef: ba ảnh tươi và ba ảnh hỏng. Tất cả đều được "
-        "phân loại đúng với độ tin cậy cao; thịt tươi có màu đỏ tươi, thịt hỏng có màu nâu sẫm rõ rệt.",
+        "Phần này trình bày các ảnh chụp màn hình thực tế của ứng dụng đang chạy trên trình duyệt. Giao diện được thiết "
+        "kế tối giản, hai cột: cột trái để tải và xem trước ảnh, cột phải hiển thị kết quả. Bảng màu tối giúp làm nổi "
+        "bật ảnh thịt và các thanh xác suất.",
+    )
+    add_paragraph(
+        doc,
+        "Khi mới mở, trang hiển thị vùng kéo-thả cùng hướng dẫn định dạng và giới hạn dung lượng (Hình 8). Người dùng "
+        "có thể bấm chọn tệp hoặc kéo ảnh trực tiếp vào vùng này.",
+    )
+    add_figure(doc, FIG / "web_upload.png",
+               "Hình 8. Màn hình ban đầu: vùng kéo-thả ảnh và ghi chú định dạng, dung lượng.", width=6.2)
+    add_paragraph(
+        doc,
+        "Sau khi chọn ảnh và nhấn 'Phân tích', ảnh xem trước hiện ở cột trái, còn cột phải hiển thị nhãn kết quả kèm "
+        "màu (xanh cho Tươi), độ tin cậy và thanh xác suất cho từng lớp. Hình 9 minh họa một ảnh thịt tươi được dự "
+        "đoán đúng là 'Tươi' với độ tin cậy cao; hai thanh xác suất cho thấy phần lớn khối lượng dồn vào lớp Tươi.",
+    )
+    add_figure(doc, FIG / "web_result_fresh.png",
+               "Hình 9. Kết quả cho ảnh thịt tươi: nhãn 'Tươi', độ tin cậy và thanh xác suất từng lớp.", width=6.6)
+    add_paragraph(
+        doc,
+        "Với ảnh thịt đã hỏng, hệ thống trả về nhãn 'Hỏng / Ôi thiu' (màu đỏ) kèm mô tả cảnh báo và thanh xác suất "
+        "nghiêng hẳn về lớp Hỏng (Hình 10). Cách phối màu theo mức độ (xanh/vàng/đỏ) giúp người dùng nắm nhanh kết quả "
+        "mà không cần đọc kỹ con số.",
+    )
+    add_figure(doc, FIG / "web_result_spoiled.png",
+               "Hình 10. Kết quả cho ảnh thịt hỏng: nhãn 'Hỏng / Ôi thiu' với xác suất cao ở lớp Hỏng.", width=6.6)
+    add_paragraph(
+        doc,
+        "Toàn bộ tương tác diễn ra không tải lại trang: ảnh được gửi bất đồng bộ tới endpoint /predict và kết quả được "
+        "dựng lại bằng JavaScript. Phía dưới trang luôn có ghi chú nhắc rằng công cụ chỉ hỗ trợ sàng lọc, không thay "
+        "thế kiểm nghiệm chính thức.",
+    )
+
+    add_heading(doc, "7.4 Kết quả demo trên tập test", 2)
+    add_paragraph(
+        doc,
+        "Ngoài các ảnh chụp giao diện, Hình 11 tổng hợp dự đoán của mô hình trên sáu ảnh test LocBeef: ba ảnh tươi và "
+        "ba ảnh hỏng. Tất cả đều được phân loại đúng với độ tin cậy cao; thịt tươi có màu đỏ tươi, thịt hỏng có màu nâu "
+        "sẫm rõ rệt.",
     )
     add_figure(doc, FIG / "demo_predictions.png",
-               "Hình 8. Demo dự đoán trên ảnh test: dấu ✓ xanh là dự đoán đúng, kèm độ tin cậy.", width=6.4)
-    add_heading(doc, "7.4 Xử lý định dạng ảnh và độ bền", 2)
+               "Hình 11. Demo dự đoán trên ảnh test: dấu ✓ xanh là dự đoán đúng, kèm độ tin cậy.", width=6.4)
+    add_heading(doc, "7.5 Xử lý định dạng ảnh và độ bền", 2)
     add_paragraph(
         doc,
         "Ảnh chụp từ điện thoại hoặc tải trên web đôi khi ở định dạng AVIF/HEIC (thường vẫn mang đuôi .jpg) mà OpenCV "
@@ -633,7 +672,7 @@ def build() -> None:
         "ảnh, nhờ đó không báo lỗi với các định dạng hiện đại. Ứng dụng cũng kiểm tra phần mở rộng và giới hạn dung "
         "lượng tải lên (10 MB).",
     )
-    add_heading(doc, "7.5 Cách chạy", 2)
+    add_heading(doc, "7.6 Cách chạy", 2)
     add_paragraph(
         doc,
         "Cài phụ thuộc bằng pip install -r requirements.txt rồi chạy python app.py. Mô hình đã được đóng gói sẵn trong "
