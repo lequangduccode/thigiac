@@ -542,7 +542,7 @@ def build() -> None:
     add_heading(doc, "6.3 Ma trận nhầm lẫn", 2)
     add_paragraph(
         doc,
-        "Confusion matrix (Hình 4) cho thấy toàn bộ 490 ảnh hỏng được nhận đúng; 20 ảnh tươi bị đoán nhầm thành hỏng và "
+        "Confusion matrix (Hình 4) cho thấy toàn bộ 490 ảnh hỏng được nhận đúng; 21 ảnh tươi bị đoán nhầm thành hỏng và "
         "không có ảnh hỏng nào bị đoán nhầm thành tươi. Nói cách khác, mô hình nghiêng về phía thận trọng: khi sai, nó "
         "sai theo hướng cảnh báo hỏng chứ không bỏ sót thịt hỏng — đặc tính có lợi cho bài toán an toàn thực phẩm.",
     )

@@ -168,7 +168,7 @@ def fig_feature_importance(bundle: dict) -> None:
     fig, ax = plt.subplots(figsize=(8, 4.5))
     bars = ax.bar(labels, sums, color=["#4f8cff", "#8b5cf6", "#f4a935", "#2fbf71"])
     for bar, v in zip(bars, sums):
-        ax.text(bar.get_x() + bar.get_width() / 2, v + 0.005, f"{v*100:.0f}%",
+        ax.text(bar.get_x() + bar.get_width() / 2, v + 0.005, f"{v*100:.1f}%",
                 ha="center", fontsize=10)
     ax.set_ylabel("Tong do quan trong (RandomForest)")
     ax.set_title("Dong gop cua tung nhom dac trung vao mo hinh")

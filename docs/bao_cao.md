@@ -55,7 +55,7 @@ Mô hình chính là **RandomForest** (300 cây, `class_weight="balanced"`). Mã
 | F1-score | 0.98 | 0.98 |
 
 - **Accuracy: 97.9%** (959/980 ảnh đúng, 21 lỗi).
-- Ma trận nhầm lẫn: 20 ảnh `fresh` bị đoán nhầm thành `spoiled`; không có ảnh `spoiled` nào bị đoán nhầm thành `fresh`. Mô hình nghiêng về phía "an toàn" (thiên về báo hỏng), phù hợp bài toán an toàn thực phẩm.
+- Ma trận nhầm lẫn: 21 ảnh `fresh` bị đoán nhầm thành `spoiled`; không có ảnh `spoiled` nào bị đoán nhầm thành `fresh`. Mô hình nghiêng về phía "an toàn" (thiên về báo hỏng), phù hợp bài toán an toàn thực phẩm.
 
 Xem `outputs/locbeef_rf_v1/confusion_matrix.png` và `classification_report.txt`.
 
